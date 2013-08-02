@@ -31,14 +31,12 @@
                 "AWS::CloudFormation::Init" : {
                     "config" : {
                         "packages" : {
-                            "puppet" : []
-                        },
-
-                        "sources" : {
-                            "/tmp/" : "https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp"
+                            "yum" :
+                            {
+                                "puppet" : []
+                            }
                         }
                     }
-
                 }
             },
             "Properties":{
@@ -52,11 +50,14 @@
                     "yum update -y aws-cfn-bootstrap\n",
 
                     "# Install packages\n",
-                    "/opt/aws/bin/cfn-init -s ", { "Ref" : "AWS::StackName" }, " -r WebServer ",
+                    "/opt/aws/bin/cfn-init -s ", { "Ref" : "AWS::StackName" }, " -r devpi",
                     "    --region ", { "Ref" : "AWS::Region" }, " || error_exit 'Failed to run cfn-init'\n",
+
+                    "# Fetch puppet manifest\n",
+                    "curl https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp -o /tmp/devpi.pp\n",
                     
                     "# kick puppet\n",
-                    "puppet apply /tmp/devpi.pp"
+                    "puppet apply -l /var/log/puppetapply.log /tmp/devpi.pp"
                     ]]}}        
             }
         },
