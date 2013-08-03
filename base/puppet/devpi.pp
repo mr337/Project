@@ -66,7 +66,7 @@ file{'/tmp/devpi.pp':
 }
 cron::job{
     'kickPuppet':
-        minute  => '*/2',
+        minute  => '*/5',
         hour    => '*',
         month   => '*',
         weekday => '*',
