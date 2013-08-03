@@ -1,0 +1,108 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "Simple devpi cluster setup, since I am a cheapo only using micro isntances",
+
+    "Parameters": {
+        "KeyName" : {
+            "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type" : "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "AllowedPattern" : "[-_ a-zA-Z0-9]*",
+            "ConstraintDescription" : "can contain only alphanumeric characters, spaces, dashes and underscores."
+        },
+
+        "InstanceType" : {
+            "Description" : "Devpi EC2 instance type",
+            "Type" : "String",
+            "Default" : "t1.micro",
+            "AllowedValues" : ["t1.micro"],
+            "ConstraintDescription" : "Since I'm a cheapo, only free tier hardware!"
+        }
+    },
+
+    "Resources" : {
+        "devpi" :{
+            "Type" : "AWS::EC2::Instance",
+            "Metadata" : {
+                "Comment1" : "This is to get puppet fired up",
+
+                "AWS::CloudFormation::Init" : {
+                    "config" : {
+                        "packages" : {
+                            "yum" :
+                            {
+                                "puppet" : []
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties":{
+                "AvailabilityZone" : "us-west-2a",
+                "ImageId"          : "ami-0358ce33",
+                "InstanceType"     : { "Ref" : "InstanceType"},
+                "SecurityGroups"   : [ {"Ref" : "DevpiSecurityGroup"} ],
+                "KeyName"          : { "Ref" : "KeyName" },
+                "Tags"             : [ { "Key" : "type", "Value" : "devpi" } ],
+                "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash -v\n",
+                    "yum update -y aws-cfn-bootstrap\n",
+
+                    "# Install packages\n",
+                    "/opt/aws/bin/cfn-init -s ", { "Ref" : "AWS::StackName" }, " -r devpi",
+                    "    --region ", { "Ref" : "AWS::Region" }, " || error_exit 'Failed to run cfn-init'\n",
+
+                    "# Fetch puppet manifest\n",
+                    "curl https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp -o /tmp/devpi.pp\n",
+                    
+                    "# kick puppet\n",
+                    "puppet apply -l /var/log/puppetapply.log /tmp/devpi.pp"
+                    ]]}}        
+            }
+        },
+
+        "DevpiSecurityGroup" : {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" :{
+                "GroupDescription" : "Enable HTTP 80 for devpi serving",
+                "SecurityGroupIngress":[
+                    {"IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
+                    {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : "0.0.0.0/0"}
+                ]
+            }
+        },
+
+        "devpiUser" : {
+            "Type" : "AWS::IAM::User",
+            "Properties":{
+                "Path"     : "/",
+                "Policies" : [
+                {
+                    "PolicyName": "root",
+                    "PolicyDocument": {
+                        "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": "cloudformation:DescribeStackResource",
+                            "Resource": "*"
+                        }
+                        ]
+                    }
+                }
+                ]
+            }
+        },
+
+        "devpiKeys": {
+            "Type" : "AWS::IAM::AccessKey",
+            "Properties" : {
+                "Serial"   : 1,
+                "Status"   : "Active",
+                "UserName" : { "Ref" : "devpiUser" }
+            }
+        }
+
+    }
+}
