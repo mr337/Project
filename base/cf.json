@@ -54,9 +54,15 @@
                     "/opt/aws/bin/cfn-init -s ", { "Ref" : "AWS::StackName" }, " -r devpi",
                     "    --region ", { "Ref" : "AWS::Region" }, " || error_exit 'Failed to run cfn-init'\n",
 
+
                     "# Fetch puppet manifest\n",
                     "curl https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp -o /tmp/devpi.pp\n",
-                    
+                    "chmod 777 /tmp/devpi.pp\n",
+
+                    "#install puppet required module (since no puppet master)\n",
+                    "mkdir /etc/puppet/modules\n",
+                    "puppet module install torrancew/cron --version 0.0.3\n",
+
                     "# kick puppet\n",
                     "puppet apply -l /var/log/puppetapply.log /tmp/devpi.pp"
                     ]]}}        
