@@ -135,45 +135,87 @@
             }
         },
 
-        "CPUAlarmHigh": {
+        "HighLatency":{
             "Type": "AWS::CloudWatch::Alarm",
             "Properties": {
-                "AlarmDescription": "Scale-up if CPU > 90% for 10 minutes",
-                "MetricName": "CPUUtilization",
-                "Namespace": "AWS/EC2",
+                "AlarmDescription": "Scale-up if HTTP latency >= 5s in 1minute period",
+                "MetricName": "Latency",
+                "Namespace": "AWS/ELB",
                 "Statistic": "Average",
-                "Period": "300",
-                "EvaluationPeriods": "2",
-                "Threshold": "90",
+                "Period": "60",
+                "EvaluationPeriods": "1",
+                "Threshold": "5",
                 "AlarmActions": [ { "Ref": "DevpiScaleUpPolicy" } ],
                 "Dimensions": [
                 {
-                    "Name": "AutoScalingGroupName",
-                    "Value": { "Ref": "DevpiGroup" }
+                    "Name": "LoadBalancerName",
+                    "Value": { "Ref": "DevpiLB" }
+                }
+                ],
+                    "ComparisonOperator": "GreaterThanOrEqualToThreshold"
+            }
+        },
+
+        "LowLatency": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Scale-down if HTTP latency < 5s in 10 minute period",
+                "MetricName": "Latency",
+                "Namespace": "AWS/ELB",
+                "Statistic": "Average",
+                "Period": "60",
+                "EvaluationPeriods": "10",
+                "Threshold": "5",
+                "AlarmActions": [ { "Ref": "DevpiScaleDownPolicy" } ],
+                "Dimensions": [
+                {
+                    "Name": "LoadBalancerName",
+                    "Value": { "Ref": "DevpiLB" }
+                }
+                ],
+                    "ComparisonOperator": "LessThanThreshold"
+            }
+        },
+
+        "HighHTTP5XX":{
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Scale-up if HTTP Repsonse 5XX > 5 in 1m period",
+                "MetricName": "HTTPCode_Backend_5XX",
+                "Namespace": "AWS/ELB",
+                "Statistic": "Average",
+                "Period": "60",
+                "EvaluationPeriods": "1",
+                "Threshold": "5",
+                "AlarmActions": [ { "Ref": "DevpiScaleUpPolicy" } ],
+                "Dimensions": [
+                {
+                    "Name": "LoadBalancerName",
+                    "Value": { "Ref": "DevpiLB" }
                 }
                 ],
                     "ComparisonOperator": "GreaterThanThreshold"
             }
         },
 
-        "CPUAlarmLow": {
+        "LowHTTP5xx": {
             "Type": "AWS::CloudWatch::Alarm",
             "Properties": {
-                "AlarmDescription": "Scale-down if CPU < 70% for 10 minutes",
-                "MetricName": "CPUUtilization",
-                "Namespace": "AWS/EC2",
+                "AlarmDescription": "Scale-down if HTTP Response 5XX=0 for 5 minutes",
+                "MetricName": "HTTPCode_Backend_5XX",
+                "Namespace": "AWS/ELB",
                 "Statistic": "Average",
-                "Period": "300",
-                "EvaluationPeriods": "2",
-                "Threshold": "70",
+                "Period": "60",
+                "EvaluationPeriods": "5",
+                "Threshold": "1",
                 "AlarmActions": [ { "Ref": "DevpiScaleDownPolicy" } ],
                 "Dimensions": [
                 {
-                    "Name": "AutoScalingGroupName",
-                    "Value": { "Ref": "DevpiGroup" }
+                    "Name": "LoadBalancerName",
+                    "Value": { "Ref": "DevpiLB" }
                 }
                 ],
-                    "ComparisonOperator": "LessThanThreshold"
+                    "ComparisonOperator": "LessThanOrEqualToThreshold"
             }
         },
 
@@ -217,6 +259,5 @@
                 "UserName" : { "Ref" : "devpiUser" }
             }
         }
-
     }
 }
