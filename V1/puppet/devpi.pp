@@ -60,5 +60,17 @@ exec{'runDevpi':
     subscribe => Exec['deployDevpi']
 }
 
-#TODO
-#Create cron to kick the puppet
+#setup cron job
+file{'/tmp/devpi.pp':
+    ensure => 'file'
+}
+cron::job{
+    'kickPuppet':
+        minute  => '*/5',
+        hour    => '*',
+        month   => '*',
+        weekday => '*',
+        user    => 'root',
+        command => '/usr/bin/curl -o /tmp/devpi.pp https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp; /usr/bin/puppet apply /tmp/devpi.pp',
+        require => File['/tmp/devpi.pp']
+}

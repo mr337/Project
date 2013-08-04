@@ -1,7 +1,7 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
 
-    "Description" : "Simple devpi cluster setup, since I am a cheapo only using micro isntances",
+    "Description" : "Simple devpi cluster setup, since I am a cheapo only using micro isntances. Also since we are using micro instances we have to use EBS storage, found out the hard way.",
 
     "Parameters": {
         "KeyName" : {
@@ -22,12 +22,55 @@
         }
     },
 
-    "Resources" : {
-        "devpi" :{
-            "Type" : "AWS::EC2::Instance",
-            "Metadata" : {
-                "Comment1" : "This is to get puppet fired up",
+    "Mappings" : {
+        "AWSInstanceType2Arch" : {
+            "t1.micro"    : { "Arch" : "64" }
+        },
+        "AWSRegion2AMI" : {
+            "us-east-1"      : { "64" : "ami-05355a6c" },
+            "us-west-1"      : { "64" : "ami-3ffed17a" },
+            "us-west-2"      : { "64" : "ami-0358ce33" },
+            "eu-west-1"      : { "64" : "ami-c7c0d6b3" },
+            "sa-east-1"      : { "64" : "ami-5253894f" },
+            "ap-southeast-1" : { "64" : "ami-fade91a8" },
+            "ap-southeast-2" : { "64" : "ami-d16bfbeb" },
+            "ap-northeast-1" : { "64" : "ami-39b23d38" }
+        }
+    },
 
+    "Resources" : {
+
+
+        "InitConfig" : {
+            "Type" : "AWS::AutoScaling::LaunchConfiguration",
+            "Properties" : {
+                "ImageId"        : { "Fn::FindInMap" : [ "AWSRegion2AMI", { "Ref" : "AWS::Region" },
+                                        { "Fn::FindInMap" : [ "AWSInstanceType2Arch", { "Ref" : "InstanceType" },
+                                        "Arch" ] } ] },
+                "KeyName"        : { "Ref" : "KeyName" },
+                "SecurityGroups" : [ { "Ref" : "DevpiSecurityGroup" } ],
+                "InstanceType"   : { "Ref" : "InstanceType" },
+                "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash -v\n",
+                    "yum update -y aws-cfn-bootstrap\n",
+
+                    "# Install packages\n",
+                    "/opt/aws/bin/cfn-init -s ", { "Ref" : "AWS::StackName" }, " -r InitConfig",
+                    "    --region ", { "Ref" : "AWS::Region" }, " || error_exit 'Failed to run cfn-init'\n",
+
+                    "# Fetch puppet manifest\n",
+                    "curl https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp -o /tmp/devpi.pp\n",
+                    "chmod 777 /tmp/devpi.pp\n",
+
+                    "#install puppet required module (since no puppet master)\n",
+                    "mkdir /etc/puppet/modules\n",
+                    "puppet module install torrancew/cron --version 0.0.3\n",
+
+                    "# kick puppet\n",
+                    "puppet apply -l /var/log/puppetapply.log /tmp/devpi.pp"
+                    ]]}}
+            },
+            "Metadata" : {
                 "AWS::CloudFormation::Init" : {
                     "config" : {
                         "packages" : {
@@ -38,28 +81,99 @@
                         }
                     }
                 }
-            },
-            "Properties":{
-                "AvailabilityZone" : "us-west-2a",
-                "ImageId"          : "ami-0358ce33",
-                "InstanceType"     : { "Ref" : "InstanceType"},
-                "SecurityGroups"   : [ {"Ref" : "DevpiSecurityGroup"} ],
-                "KeyName"          : { "Ref" : "KeyName" },
-                "Tags"             : [ { "Key" : "type", "Value" : "devpi" } ],
-                "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
-                    "#!/bin/bash -v\n",
-                    "yum update -y aws-cfn-bootstrap\n",
+            }
+        },
 
-                    "# Install packages\n",
-                    "/opt/aws/bin/cfn-init -s ", { "Ref" : "AWS::StackName" }, " -r devpi",
-                    "    --region ", { "Ref" : "AWS::Region" }, " || error_exit 'Failed to run cfn-init'\n",
+        "DevpiGroup" : {
+            "Type" : "AWS::AutoScaling::AutoScalingGroup",
+            "Properties" : {
+                "AvailabilityZones"       : { "Fn::GetAZs" : ""},
+                "DesiredCapacity"         : "1",
+                "LaunchConfigurationName" : { "Ref" : "InitConfig" },
+                "LoadBalancerNames"       : [ { "Ref" : "DevpiLB" } ],
+                "MinSize"                 : "1",
+                "MaxSize"                 : "10",
+                "Tags"                    : [{ "Key" : "Type", "Value" : "devpidist", "PropagateAtLaunch" : true }]
+            }
+        },
 
-                    "# Fetch puppet manifest\n",
-                    "curl https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp -o /tmp/devpi.pp\n",
-                    
-                    "# kick puppet\n",
-                    "puppet apply -l /var/log/puppetapply.log /tmp/devpi.pp"
-                    ]]}}        
+        "DevpiLB" : {
+            "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties" : {
+                "AvailabilityZones" : { "Fn::GetAZs" : "" },
+                "Listeners" : [ {
+                    "LoadBalancerPort" : "80",
+                    "InstancePort" : "80",
+                    "Protocol" : "HTTP"
+                } ],
+                "HealthCheck" : {
+                    "Target" : { "Fn::Join" : [ "", ["HTTP:", "80", "/"]]},
+                    "HealthyThreshold" : "3",
+                    "UnhealthyThreshold" : "5",
+                    "Interval" : "30",
+                    "Timeout" : "5"
+                }
+            }
+        },
+
+        "DevpiScaleUpPolicy" : {
+            "Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Properties" : {
+                "AdjustmentType" : "ChangeInCapacity",
+                "AutoScalingGroupName" : { "Ref" : "DevpiGroup" },
+                "Cooldown" : "60",
+                "ScalingAdjustment" : "1"
+            }
+        },
+        "DevpiScaleDownPolicy" : {
+            "Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Properties" : {
+                "AdjustmentType" : "ChangeInCapacity",
+                "AutoScalingGroupName" : { "Ref" : "DevpiGroup" },
+                "Cooldown" : "60",
+                "ScalingAdjustment" : "-1"
+            }
+        },
+
+        "CPUAlarmHigh": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Scale-up if CPU > 90% for 10 minutes",
+                "MetricName": "CPUUtilization",
+                "Namespace": "AWS/EC2",
+                "Statistic": "Average",
+                "Period": "300",
+                "EvaluationPeriods": "2",
+                "Threshold": "90",
+                "AlarmActions": [ { "Ref": "DevpiScaleUpPolicy" } ],
+                "Dimensions": [
+                {
+                    "Name": "AutoScalingGroupName",
+                    "Value": { "Ref": "DevpiGroup" }
+                }
+                ],
+                    "ComparisonOperator": "GreaterThanThreshold"
+            }
+        },
+
+        "CPUAlarmLow": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Scale-down if CPU < 70% for 10 minutes",
+                "MetricName": "CPUUtilization",
+                "Namespace": "AWS/EC2",
+                "Statistic": "Average",
+                "Period": "300",
+                "EvaluationPeriods": "2",
+                "Threshold": "70",
+                "AlarmActions": [ { "Ref": "DevpiScaleDownPolicy" } ],
+                "Dimensions": [
+                {
+                    "Name": "AutoScalingGroupName",
+                    "Value": { "Ref": "DevpiGroup" }
+                }
+                ],
+                    "ComparisonOperator": "LessThanThreshold"
             }
         },
 
