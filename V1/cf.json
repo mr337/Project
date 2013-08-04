@@ -121,7 +121,7 @@
             "Properties" : {
                 "AdjustmentType" : "ChangeInCapacity",
                 "AutoScalingGroupName" : { "Ref" : "DevpiGroup" },
-                "Cooldown" : "60",
+                "Cooldown" : "300",
                 "ScalingAdjustment" : "1"
             }
         },
@@ -130,7 +130,7 @@
             "Properties" : {
                 "AdjustmentType" : "ChangeInCapacity",
                 "AutoScalingGroupName" : { "Ref" : "DevpiGroup" },
-                "Cooldown" : "60",
+                "Cooldown" : "300",
                 "ScalingAdjustment" : "-1"
             }
         },
@@ -183,7 +183,7 @@
                 "AlarmDescription": "Scale-up if HTTP Repsonse 5XX > 5 in 1m period",
                 "MetricName": "HTTPCode_Backend_5XX",
                 "Namespace": "AWS/ELB",
-                "Statistic": "Average",
+                "Statistic": "Sum",
                 "Period": "60",
                 "EvaluationPeriods": "1",
                 "Threshold": "5",
@@ -204,10 +204,10 @@
                 "AlarmDescription": "Scale-down if HTTP Response 5XX=0 for 5 minutes",
                 "MetricName": "HTTPCode_Backend_5XX",
                 "Namespace": "AWS/ELB",
-                "Statistic": "Average",
+                "Statistic": "Sum",
                 "Period": "60",
                 "EvaluationPeriods": "5",
-                "Threshold": "1",
+                "Threshold": "0",
                 "AlarmActions": [ { "Ref": "DevpiScaleDownPolicy" } ],
                 "Dimensions": [
                 {

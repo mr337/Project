@@ -3,7 +3,6 @@
 #Package stuff
 package{'nginx':
     ensure => present,
-    before => File['/etc/nginx/conf.d/server.conf']
 }
 
 package{'python-pip':
@@ -14,26 +13,19 @@ package{'python-pip':
 file{'/usr/bin/pip':
     ensure  => 'link',
     target  => '/usr/bin/pip-python',
-    require => Package['python-pip']
 }
 
 package{'devpi':
     ensure   => present,
     provider => pip,
-    require  => File['/usr/bin/pip']
 }
 
 
 #Prep and install devpi server
-file{'/devpi':
-    ensure  => 'directory',
-    require => Package['devpi']
-}
-
 exec{'deployDevpi':
     command => 'devpi-server --gendeploy=/devpi',
+    creates => '/devpi',
     path    => '/usr/bin/',
-    require => File['/devpi'] 
 }
 
 #copy devpi nginx conf
@@ -42,22 +34,18 @@ file{'/etc/nginx/conf.d/server.conf':
     group => root,
     mode => 644,
     source => '/devpi/etc/nginx-devpi.conf',
-    require => Exec['deployDevpi']
 }
 
 #restart service when site added to conf.d
 service{'nginx':
     ensure    => 'running',
     enable    => 'true',
-    subscribe => File['/etc/nginx/conf.d/server.conf']
-
 }
 
 #start devpi server itself
 exec{'runDevpi':
     command   => 'devpi-ctl start all',
     path      => '/devpi/bin/',
-    subscribe => Exec['deployDevpi']
 }
 
 #setup cron job
@@ -71,6 +59,9 @@ cron::job{
         month   => '*',
         weekday => '*',
         user    => 'root',
-        command => '/usr/bin/curl -o /tmp/devpi.pp https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp; /usr/bin/puppet apply /tmp/devpi.pp',
-        require => File['/tmp/devpi.pp']
+        command => '/usr/bin/curl -o /tmp/devpi.pp https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp; /usr/bin/puppet apply -l /tmp/puppetApply.log /tmp/devpi.pp',
 }
+
+Package['python-pip'] -> File['/usr/bin/pip'] -> Package['devpi'] -> Exec['deployDevpi'] -> Exec['runDevpi']
+Package['nginx'] -> File['/etc/nginx/conf.d/server.conf'] -> Service['nginx'] 
+File['/tmp/devpi.pp'] -> Cron::Job['kickPuppet']
