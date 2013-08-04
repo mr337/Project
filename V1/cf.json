@@ -108,7 +108,7 @@
                 } ],
                 "HealthCheck" : {
                     "Target" : { "Fn::Join" : [ "", ["HTTP:", "80", "/"]]},
-                    "HealthyThreshold" : "3",
+                    "HealthyThreshold" : "2",
                     "UnhealthyThreshold" : "5",
                     "Interval" : "30",
                     "Timeout" : "5"
