@@ -1,0 +1,138 @@
+\documentclass{article}
+\usepackage{graphicx}
+
+\begin{document}
+
+\title{Devpi In The Cloud}
+\author{Lee Hicks}
+
+\maketitle
+
+\section{What is this?}
+This project is designing and implementing a Devpi server for pypi caching via Amazon Web Services (AWS).
+
+\section{Versions}
+There are multiple versions, all being a derivative of the base version.
+
+\begin{itemize}
+    \item Base - the bare minimum to get a devpi cache up in running via AWS 
+    \item V1 - Base + Elastic Load Balancing (ELB) and AutoScaling
+    \item V2 - still haven't decided yet
+\end{itemize}
+
+\section{Version - Base}
+The base version is enough to deploy a devpi cache in AWS via CloudFormation (CF).
+
+\subsection{Architecture}
+For a simple devpi server all that is needed is devpi(duh). Devpi has a built in server via Bottle so with a few
+commands devpi is installed and running. While the built in server is handy in my testing it seemed only to
+serve requests that originate from localhost. The more permanent deployment is to put nginx in front of the
+devpi cache.
+
+TODO SIMPLE FIGURE OF DESIGN 
+
+\subsection{Implementation}
+To deploy a simple devpi server a CF script was written. The CF script
+is pretty vanilla with starting a micro EC2 instance of Amazon Linux and applying the standard security policies of
+port 22 and 80 open. CF Cloud-Init is used to install puppet. I also took advantage of the UserData field which
+allows shell commands to be processed. In this case I use the userdata to fetch the initial puppet script and apply it.
+
+TODO SIMPLE FIGURE OF BOOT PROCESS
+
+\subsection{Puppet}
+\subsubsection{How is it used?}
+I debated quite a while on how I was going to use puppet for configuration. In the end I came to the conclusion that
+running masterless puppet fit this application the best.  
+
+The use case:
+\begin{itemize}
+    \item Security isn't really a tight concern since these are pypi caches. Unfortunately it is possible for an attacker
+        to comprise the package at the cache. I would argue that the pypi cache itself is a larger target since most of
+        the packages are signed and can't be verified, that I can tell.
+    \item The EC2 instances would be brought up and down at the drop of the hat
+    \item They are only serving < 100 servers, no public cache
+    \item Design to be 100\% up time as possible 
+    \item Didn't need any reports
+    \item I don't want to touch it once deployed, unless I have too... 
+    \item Most importantly KISS - KEEP IT SIMPLE STUPID
+\end{itemize}
+
+\subsubsection{Going Masterless}
+
+Using a puppet master PM requires at least a dedicated ec2 to be on the safe side. This could be ran on an instance
+that is also serving devpi. Only problem is when under load any extra processing seems to kill micro instance performance.
+More importantly, a PM now becomes a single point of failure. If the PM goes down and instances
+come online, either replacing dead instances or handling extra load, no PM to pass along an Inuit manifest is now a show stopper.
+So to reduce that risk one could put a puppet master behind another ELB with dedicated instance, increasing cost, and also adds 
+a whole host of new problems like master slave PMs, how do we enforce that, when the master goes down how does trust get 
+transferred to slave PM, does it scale? A rabbit whole of issues to solve that masterless puppet steers around.
+
+\subsubsection{Implementation}
+
+\begin{enumerate}
+    \item Puppet init stored on S3 bucked
+    \item Instanced fired up via CF using CF-init and userdata script
+    \item CF-init ensures puppet is installed
+    \item Userdata script grabs the init .pp file and applies it
+    \item Puppet applies the manifest and also creates a cron job to fetch and apply every X minutes (our case 5) 
+\end{enumerate}
+
+This allows any AMI that is RHEL based, aka yum, use this process without requiring us to bake our own AMIs. This can
+be extended very easily to any AMI that CF-init supports.
+
+Since the cron jobs runs every X minutes applying updates to manifest is a simple as uploading a new manifest to the S3 bucket
+and sip a beer.
+
+\subsubsection{Woes/Drawbacks}
+As mentioned above one of the drawbacks is only vanilla puppet modules can be used, if you need modules your own your own.
+Example of this is setting up the cron job. The tao of puppet seems to be that puppet defines the state the system should
+be rather than using rules and executing shell commands. Unfortunately, at this moment I don't know how to tell puppet how
+to install modules, and google didn't turn up anything. So I had to use shell commands in the UserData to add the cron module
+before puppet apply.
+
+To complicate matters, puppet installs modules in several places, /etc/puppet/modules:/usr/share/puppet/modules. When 
+/etc/puppet/modules wasn't found it would halt right there without trying the any of the other paths defined. To this day I
+don't know why that is. So to fix I, once again, added in userdata to create the darn path so puppet install module wouldn't
+complain.
+
+Another issue is security, currently at the time of writing the manifest is on a public S3 bucket. For this usecase I don't
+believe this is an issue since no sensitive info in currently in the manifest. For more sensitive manifests I do plan on adding
+S3 permissions so only users of AWS, and instances, can access the S3 bucket.
+
+\section{Analysis}
+\subsubsection{Performance}
+\subsubection{Cost}
+\subsubection{Conclusion}
+The best use case for this is to have a puppet configurable devpi cache that is always on, and possible shared with a few devs. 
+
+\section{Version - V1}
+
+\subsection{Architecture}
+
+\subsection{Implementation}
+
+\subsection{Puppet}
+\subsubsection{How is it used?}
+I debated quite a while on how I was going to use puppet for configuration. In the end I came to the conclusion that
+running masterless puppet fit this application the best.  
+
+The use case:
+\begin{itemize}
+    \item The EC2 instances would be brought up and down at the drop of the hat
+    \item They are only serving < 100 servers, no public cache
+    \item Design to be 100\% up time as possible 
+    \item I don't want to touch it once deployed, unless I have too... 
+    \item Most importantly KISS - KEEP IT SIMPLE STUPID
+\end{itemize}
+
+\subsubsection{Implementation}
+The use case:
+
+\subsubsection{Woes/Drawbacks}
+
+\section{Analysis}
+\subsubsection{Performance}
+\subsubection{Cost}
+\subsubection{Conclusion}
+
+\end{document}
