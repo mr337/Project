@@ -1,5 +1,7 @@
-\documentclass{article}
+\documentclass[12pt, letterpaper]{article}
 \usepackage{graphicx}
+\usepackage[top=1in, left=1in, right=1in, right=1in]{geometry}
+\usepackage{float}
 
 \begin{document}
 
@@ -23,13 +25,56 @@ There are multiple versions, all being a derivative of the base version.
 \section{Version - Base}
 The base version is enough to deploy a devpi cache in AWS via CloudFormation (CF).
 
+\section{Deployment}
+
+\subsection{Required Files}
+The necessary files for base deployment are located in in the Project repo.
+
+Important files:
+\begin{itemize}
+    \item Project/base/cf.json - CF script to bring up a single machine
+    \item Project/base/puppet/devpi.pp - Puppet script used during instance provisioning
+\end{itemize}
+
+\subsection{Provisioning}
+Ensure you have the required permissions to deploy instances, this also includes at least one set of EC2 KeyPair.
+
+The setup is done in two parts, one is to host the Puppet configuration accessible to the EC2 instances. We will use
+S3 to host the files. Once hosted we will update the cf.json script to point to that file and then use CF to bring
+up the instance.
+
+S3 steps:
+\begin{enumerate}
+    \item In S3 click Create Bucket and follow steps
+    \item Once bucket is created, upload the devpi.pp file
+    \item During upload set permissions to "everyone" so the instances can download the config
+    \item Find the direct link for this S3 file, we will use that in the next section
+\end{enumerate}
+
+CF steps:
+\begin{enumerate}
+    \item Update the cf.json in the UserData section to curl the location above
+    \item In CF click Create Stack and follow the instructions to create the stack
+    \item On the Specify Parameters ensure "I acknowledge that this template may create IAM resources" is check.  
+    \item Once stack is created it will take at least 5 minutes for provisioning
+\end{enumerate}
+
+\subsection{Daily Operations}
+There should be no daily operations associated with this setup.
+
+
 \subsection{Architecture}
 For a simple devpi server all that is needed is devpi(duh). Devpi has a built in server via Bottle so with a few
 commands devpi is installed and running. While the built in server is handy in my testing it seemed only to
 serve requests that originate from localhost. The more permanent deployment is to put nginx in front of the
 devpi cache.
 
-TODO SIMPLE FIGURE OF DESIGN 
+\begin{figure}[H]
+    \centering
+    Base Architecture
+    \includegraphics[width=\textwidth]{figures/base_arch.eps}
+\end{figure}
+
 
 \subsection{Implementation}
 To deploy a simple devpi server a CF script was written. The CF script
@@ -37,7 +82,6 @@ is pretty vanilla with starting a micro EC2 instance of Amazon Linux and applyin
 port 22 and 80 open. CF Cloud-Init is used to install puppet. I also took advantage of the UserData field which
 allows shell commands to be processed. In this case I use the userdata to fetch the initial puppet script and apply it.
 
-TODO SIMPLE FIGURE OF BOOT PROCESS
 
 \subsection{Puppet}
 \subsubsection{How is it used?}
@@ -63,12 +107,18 @@ Using a puppet master PM requires at least a dedicated ec2 to be on the safe sid
 that is also serving devpi. Only problem is when under load any extra processing seems to kill micro instance performance.
 More importantly, a PM now becomes a single point of failure. If the PM goes down and instances
 come online, either replacing dead instances or handling extra load, no PM to pass along an Inuit manifest is now a show stopper.
+
 So to reduce that risk one could put a puppet master behind another ELB with dedicated instance, increasing cost, and also adds 
 a whole host of new problems like master slave PMs, how do we enforce that, when the master goes down how does trust get 
 transferred to slave PM, does it scale? A rabbit whole of issues to solve that masterless puppet steers around.
 
 \subsubsection{Implementation}
 
+\begin{figure}[h]
+    \centering
+    Detailed Deployment Process 
+    \includegraphics[width=\textwidth]{figures/base_setup.eps}
+\end{figure}
 \begin{enumerate}
     \item Puppet init stored on S3 bucked
     \item Instanced fired up via CF using CF-init and userdata script
@@ -82,6 +132,7 @@ be extended very easily to any AMI that CF-init supports.
 
 Since the cron jobs runs every X minutes applying updates to manifest is a simple as uploading a new manifest to the S3 bucket
 and sip a beer.
+
 
 \subsubsection{Woes/Drawbacks}
 As mentioned above one of the drawbacks is only vanilla puppet modules can be used, if you need modules your own your own.
@@ -100,10 +151,24 @@ believe this is an issue since no sensitive info in currently in the manifest. F
 S3 permissions so only users of AWS, and instances, can access the S3 bucket.
 
 \section{Analysis}
-\subsubsection{Performance}
-\subsubection{Cost}
-\subsubection{Conclusion}
-The best use case for this is to have a puppet configurable devpi cache that is always on, and possible shared with a few devs. 
+\subsection{Performance}
+Stress testing was tested with siege. Siege simulates many GET requests, though this doesn't exactly align with devpi it is the only 
+metric I could easily simulate. Simulating high pip usage against devpi would have been out of the scope of this project. Plus it
+would have required a single medium or larger EC2 instance for spawning pip instances and high bandwidth throughput, my ISP bandwidth
+would not suffice.
+
+Siege tests have been extremely erratic from 50 req/s to almost 200 req/s. Any higher, response time increases and 5XX errors become
+the norm. While monitoring system resources devpi process never fully utilizes system resources, and once a 5XX code is generated 
+devpi fails to recover. With this it might be plausible that something internal, queue/polling, to devpi is hurting performance.
+
+A larger EC2 instance could mitigate poor performance, but this particular performance issues stems from software not hardware.
+
+\subsection{Cost}
+Cost calculation is simple for this setup. With a single instance running devpi falls in the AWS Free Usage Tier that does
+not incur cost month to month.
+
+\subsection{Conclusion}
+The best use case for this is to have a puppet configurable devpi cache that is always on, and possibly shared with a few devs. 
 
 \section{Version - V1}
 
@@ -126,13 +191,12 @@ The use case:
 \end{itemize}
 
 \subsubsection{Implementation}
-The use case:
 
 \subsubsection{Woes/Drawbacks}
 
 \section{Analysis}
 \subsubsection{Performance}
-\subsubection{Cost}
-\subsubection{Conclusion}
+\subsubsection{Cost}
+\subsubsection{Conclusion}
 
 \end{document}
