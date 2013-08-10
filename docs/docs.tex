@@ -70,8 +70,8 @@ serve requests that originate from localhost. The more permanent deployment is t
 devpi cache.
 
 \begin{figure}[H]
+    \caption{Base Architecture}
     \centering
-    Base Architecture
     \includegraphics[width=\textwidth]{figures/base_arch.eps}
 \end{figure}
 
@@ -94,7 +94,7 @@ The use case:
         to comprise the package at the cache. I would argue that the pypi cache itself is a larger target since most of
         the packages are signed and can't be verified, that I can tell.
     \item The EC2 instances would be brought up and down at the drop of the hat
-    \item They are only serving < 100 servers, no public cache
+    \item They are only serving \textless 100 servers, no public cache
     \item Design to be 100\% up time as possible 
     \item Didn't need any reports
     \item I don't want to touch it once deployed, unless I have too... 
@@ -115,8 +115,8 @@ transferred to slave PM, does it scale? A rabbit whole of issues to solve that m
 \subsubsection{Implementation}
 
 \begin{figure}[h]
+    \caption{Detailed Deployment Process}
     \centering
-    Detailed Deployment Process 
     \includegraphics[width=\textwidth]{figures/base_setup.eps}
 \end{figure}
 \begin{enumerate}
@@ -124,7 +124,7 @@ transferred to slave PM, does it scale? A rabbit whole of issues to solve that m
     \item Instanced fired up via CF using CF-init and userdata script
     \item CF-init ensures puppet is installed
     \item Userdata script grabs the init .pp file and applies it
-    \item Puppet applies the manifest and also creates a cron job to fetch and apply every X minutes (our case 5) 
+    \item Puppet applies the manifest and also creates a cron job to fetch and apply every X minutes (our case 30) 
 \end{enumerate}
 
 This allows any AMI that is RHEL based, aka yum, use this process without requiring us to bake our own AMIs. This can
@@ -134,21 +134,6 @@ Since the cron jobs runs every X minutes applying updates to manifest is a simpl
 and sip a beer.
 
 
-\subsubsection{Woes/Drawbacks}
-As mentioned above one of the drawbacks is only vanilla puppet modules can be used, if you need modules your own your own.
-Example of this is setting up the cron job. The tao of puppet seems to be that puppet defines the state the system should
-be rather than using rules and executing shell commands. Unfortunately, at this moment I don't know how to tell puppet how
-to install modules, and google didn't turn up anything. So I had to use shell commands in the UserData to add the cron module
-before puppet apply.
-
-To complicate matters, puppet installs modules in several places, /etc/puppet/modules:/usr/share/puppet/modules. When 
-/etc/puppet/modules wasn't found it would halt right there without trying the any of the other paths defined. To this day I
-don't know why that is. So to fix I, once again, added in userdata to create the darn path so puppet install module wouldn't
-complain.
-
-Another issue is security, currently at the time of writing the manifest is on a public S3 bucket. For this usecase I don't
-believe this is an issue since no sensitive info in currently in the manifest. For more sensitive manifests I do plan on adding
-S3 permissions so only users of AWS, and instances, can access the S3 bucket.
 
 \section{Analysis}
 \subsection{Performance}
@@ -164,39 +149,127 @@ devpi fails to recover. With this it might be plausible that something internal,
 A larger EC2 instance could mitigate poor performance, but this particular performance issues stems from software not hardware.
 
 \subsection{Cost}
-Cost calculation is simple for this setup. With a single instance running devpi falls in the AWS Free Usage Tier that does
-not incur cost month to month.
+Cost calculation is simple for this setup. With a single instance running devpi falls in the AWS Free Usage Tier, S3 access every
+5 minutes totals to 8640 request \textless 20K requests included in the free tier. This setup does not incur cost month to month.
+
+\subsection{Woes/Drawbacks}
+As mentioned above one of the drawbacks is only vanilla puppet modules can be used, if you need modules your own your own.
+Example of this is setting up the cron job. The tao of puppet seems to be that puppet defines the state the system should
+be rather than using rules and executing shell commands. Unfortunately, at this moment I don't know how to tell puppet how
+to install modules, and google didn't turn up anything. So I had to use shell commands in the UserData to add the cron module
+before puppet apply.
+
+To complicate matters, puppet installs modules in several places, /etc/puppet/modules:/usr/share/puppet/modules. When 
+/etc/puppet/modules wasn't found it would halt right there without trying the any of the other paths defined. To this day I
+don't know why that is. So to fix I, once again, added in userdata to create the darn path so puppet install module wouldn't
+complain.
+
+Another issue is security, currently at the time of writing the manifest is on a public S3 bucket. For this usecase I don't
+believe this is an issue since no sensitive info in currently in the manifest. For more sensitive manifests I do plan on adding
+S3 permissions so only users of AWS, and instances, can access the S3 bucket.
 
 \subsection{Conclusion}
 The best use case for this is to have a puppet configurable devpi cache that is always on, and possibly shared with a few devs. 
 
 \section{Version - V1}
 
+\subsection{Deployment}
+Steps almost exactly like base version but here for reference.
+
+\subsubsection{Required Files}
+The necessary files for base deployment are located in in the Project repo.
+
+Important files:
+\begin{itemize}
+    \item Project/V1/cf.json - CF script to bring up a single machine
+    \item Project/V1/puppet/devpi.pp - Puppet script used during instance provisioning
+\end{itemize}
+
+\subsubsection{Provisioning}
+Ensure you have the required permissions to deploy instances, this also includes at least one set of EC2 KeyPair.
+
+The setup is done in two parts, one is to host the Puppet configuration accessible to the EC2 instances. We will use
+S3 to host the files. Once hosted we will update the cf.json script to point to that file and then use CF to bring
+up the instance.
+
+S3 steps:
+\begin{enumerate}
+    \item In S3 click Create Bucket and follow steps
+    \item Once bucket is created, upload the devpi.pp file
+    \item During upload set permissions to "everyone" so the instances can download the config
+    \item Find the direct link for this S3 file, we will use that in the next section
+\end{enumerate}
+
+CF steps:
+\begin{enumerate}
+    \item Update the cf.json in the UserData section to curl the location above
+    \item In CF click Create Stack and follow the instructions to create the stack
+    \item On the Specify Parameters ensure "I acknowledge that this template may create IAM resources" is check.  
+    \item Once stack is created it will take at least 5 minutes for provisioning
+\end{enumerate}
+
+\subsubsection{Daily Operations}
+There should be no daily operations associated with this setup.
+
 \subsection{Architecture}
+Take the base version and extending for high traffic and availability it was obvious that some type of redundancy was needed. 
+Each instance is stand alone with no dependencies or shared resources, this makes it extremely easy to scale. AWS offers an 
+ELB for distributing traffic. AWS also offers AutoScaling groups to manage high and slow traffic spikes.
+
+
+This design has a public facing ELB. Behind the ELB is an AutoScaling group that contains at least one devpi
+server. The ELB will register instances that it determines is healthy, and start distributing traffic with the new instance.   
+
+\begin{figure}[H]
+    \caption{V1 Architecture}
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/v1_arch.eps}
+\end{figure}
 
 \subsection{Implementation}
+This AutoScaling cluster is entirely written in CF script and follows the same provisioning setup as the base, except in a cluster.
+
+The ELB is setup together with AutoScaling. Alarms are set to monitor the ELB request latency and 5XX response codes.
+
+\begin{itemize}
+    \item Latency \textgreater 5s, observed for 1m will increase AutoScaling group by 1
+    \item Latency \textless 5s, observed for 10m will decrease AutoScaling group by 1
+    \item 5XX errors \textgreater 5, observed for 1m will increase AutoScaling group by 1
+    \item 5XX errors $<=$ 0, observed for 5m will decrease AutoScaling group by 1
+\end{itemize}
+
+The alarms are more aggressive on high loads to expand quickly and shrink slowly as traffic wanes. The observation periods
+include instance provisioning delay of ~90s for a devpi instance to come online. The ELB has health checks of 60s for healthy, and
+2.5m for unhealthy. Even with hard set thresholds, the ELB can sometimes take much longer than expected to register instance 
+to the load balancing pool.
 
 \subsection{Puppet}
 \subsubsection{How is it used?}
-I debated quite a while on how I was going to use puppet for configuration. In the end I came to the conclusion that
-running masterless puppet fit this application the best.  
+Puppet is used in the same fashion as base version. Since there is no puppet master one can provision hundreds of instances
+with no bottleneck or single point of failure.
 
-The use case:
-\begin{itemize}
-    \item The EC2 instances would be brought up and down at the drop of the hat
-    \item They are only serving < 100 servers, no public cache
-    \item Design to be 100\% up time as possible 
-    \item I don't want to touch it once deployed, unless I have too... 
-    \item Most importantly KISS - KEEP IT SIMPLE STUPID
-\end{itemize}
+\subsection{Analysis}
+\subsubsection{Performance}
+Stress testing was tested with Siege. Again I do reiterate that this is a horrible test for a pypi cache. The best test
+results was with a cluster of four devpi instances processing 266 req/s, request latency \textless 0.15s, and no 5XX responses.
+Your mileage will vary!
 
-\subsubsection{Implementation}
+\subsubsection{Cost}
 
 \subsubsection{Woes/Drawbacks}
+Care must be taken when deciding thresholds, with the current threshold there is no buffer for winding up or down instances. So
+at any given time the AutoScaling will be in constant flux. There does exist a five minute cool down for AutoScaling policy, but
+that helps but doesn't replace buffer thresholds. Next version will include these buffers.
 
-\section{Analysis}
-\subsubsection{Performance}
-\subsubsection{Cost}
+Another issue that was encountered was the ELB taking a while to register instances. On one rare occasion it is believed the AWS
+was taking a lunch break and decided not to add instances at all. Most of the time long registration times is to be blamed
+on unhealthy checks taking place while puppet is still applying the manifest. When puppet is complete, the ELB has already marked
+the instance as unhealthy, and healthy checks must take place before ELB registration is done. This hiccup normally happens at 
+the worst possible time because the AutoScaling group is growing due to load. If the ELB takes too long to register the
+AutoScaling group will cool down and add another devpi instance before the first devpi instance has been registered. This is a FAIL.
+
 \subsubsection{Conclusion}
+The best use case for this design is a deployment of servers that requires always available cache.
+
 
 \end{document}
