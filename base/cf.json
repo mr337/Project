@@ -22,6 +22,22 @@
         }
     },
 
+    "Mappings" : {
+        "AWSInstanceType2Arch" : {
+            "t1.micro"    : { "Arch" : "64" }
+        },
+        "AWSRegion2AMI" : {
+            "us-east-1"      : { "64" : "ami-05355a6c" },
+            "us-west-1"      : { "64" : "ami-3ffed17a" },
+            "us-west-2"      : { "64" : "ami-0358ce33" },
+            "eu-west-1"      : { "64" : "ami-c7c0d6b3" },
+            "sa-east-1"      : { "64" : "ami-5253894f" },
+            "ap-southeast-1" : { "64" : "ami-fade91a8" },
+            "ap-southeast-2" : { "64" : "ami-d16bfbeb" },
+            "ap-northeast-1" : { "64" : "ami-39b23d38" }
+        }
+    },
+
     "Resources" : {
         "devpi" :{
             "Type" : "AWS::EC2::Instance",
@@ -40,8 +56,9 @@
                 }
             },
             "Properties":{
-                "AvailabilityZone" : "us-west-2a",
-                "ImageId"          : "ami-0358ce33",
+                "ImageId"        : { "Fn::FindInMap" : [ "AWSRegion2AMI", { "Ref" : "AWS::Region" },
+                                        { "Fn::FindInMap" : [ "AWSInstanceType2Arch", { "Ref" : "InstanceType" },
+                                        "Arch" ] } ] },
                 "InstanceType"     : { "Ref" : "InstanceType"},
                 "SecurityGroups"   : [ {"Ref" : "DevpiSecurityGroup"} ],
                 "KeyName"          : { "Ref" : "KeyName" },
