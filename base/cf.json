@@ -19,6 +19,14 @@
             "Default" : "t1.micro",
             "AllowedValues" : ["t1.micro"],
             "ConstraintDescription" : "Since I'm a cheapo, only free tier hardware!"
+        },
+
+        "PuppetURL" : {
+            "Description" : "Puppet S3 URL",
+            "Type" : "String",
+            "AllowedPattern" : ".*",
+            "Default" : "https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp",
+            "ConstraintDescription" : "URL to puppet manifest"
         }
     },
 
@@ -72,16 +80,16 @@
                     "    --region ", { "Ref" : "AWS::Region" }, " || error_exit 'Failed to run cfn-init'\n",
 
                     "# Fetch puppet manifest\n",
-                    "curl https://s3-us-west-2.amazonaws.com/devpi-config/devpi.pp -o /tmp/devpi.pp\n",
+                    "curl ", { "Ref" : "PuppetURL" }, " -o /tmp/devpi.pp\n",
                     "chmod 777 /tmp/devpi.pp\n",
 
                     "#install puppet required module (since no puppet master)\n",
                     "mkdir /etc/puppet/modules\n",
                     "puppet module install torrancew/cron --version 0.0.3\n",
-                    
+ 
                     "# kick puppet\n",
                     "puppet apply -l /var/log/puppetapply.log /tmp/devpi.pp"
-                    ]]}}        
+                    ]]}}
             }
         },
 
