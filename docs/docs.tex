@@ -153,7 +153,7 @@ Cost calculation is simple for this setup. With a single instance running devpi 
 As mentioned above one of the drawbacks is using only built in puppet modules, if you need additional modules your on your own. 
 Example of this is setting up the cron job. The tao of puppet is puppet defines the state the system should
 be in rather than using rules and executing shell commands. Researched turned up little on how to instruct puppet to install modules
-without a PM. To overcome this issue puppet modules is installed using shell scripts in the UserData section.
+without a PM. To overcome this issue puppet modules are installed using shell scripts in the UserData section.
 
 To complicate matters, puppet installs modules in several places, /etc/puppet/modules: /usr/share/puppet/modules. When 
 /etc/puppet/modules wasn't found it would halt without trying other paths defined. As a quick fix in UserData the /usr/puppet/modules
