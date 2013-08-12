@@ -55,8 +55,8 @@ CF steps:
 \begin{enumerate}
     \item Update the cf.json in the UserData section to curl the location above
     \item In CF click Create Stack and follow the instructions to create the stack
-    \item On the Specify Parameters ensure provide the URL for the puppet manifest.  
-    \item On the Specify Parameters ensure "I acknowledge that this template may create IAM resources" is check.  
+    \item On the Specify Parameters provide the URL for the puppet manifest.  
+    \item On the Specify Parameters ensure "I acknowledge that this template may create IAM resources" is checked.  
     \item Once stack is created it will take at least 5 minutes for provisioning
 \end{enumerate}
 
@@ -65,7 +65,7 @@ There should be no daily operations associated with this setup.
 
 
 \subsection{Architecture}
-For a simple devpi server all that is needed is devpi(duh). Devpi has a built in server via Bottle so with a few
+For a simple devpi server all that is needed is devpi. Devpi has a built in server via Bottle so with a few
 commands devpi is installed and running. While the built in server is handy in my testing it seemed only to
 serve requests that originate from localhost. The more permanent deployment is to put nginx in front of the
 devpi cache.
@@ -206,7 +206,7 @@ CF steps:
     \item Update the cf.json in the UserData section to curl the location above
     \item In CF click Create Stack and follow the instructions to create the stack
     \item On the Specify Parameters ensure provide the URL for the puppet manifest.  
-    \item On the Specify Parameters ensure "I acknowledge that this template may create IAM resources" is check.  
+    \item On the Specify Parameters ensure "I acknowledge that this template may create IAM resources" is checked.  
     \item Once stack is created it will take at least 5 minutes for provisioning
 \end{enumerate}
 
@@ -234,7 +234,7 @@ This AutoScaling cluster is entirely written in CF script and follows the same p
 The ELB is setup together with AutoScaling. Alarms are set to monitor the ELB request latency and 5XX response codes.
 
 \begin{itemize}
-    \item Latency \textgreater 5s, observed for 1m will increase AutoScaling group by 1
+    \item Latency \textgreater 10s, observed for 1m will increase AutoScaling group by 1
     \item Latency \textless 5s, observed for 10m will decrease AutoScaling group by 1
     \item 5XX errors \textgreater 5, observed for 1m will increase AutoScaling group by 1
     \item 5XX errors $<=$ 0, observed for 5m will decrease AutoScaling group by 1
@@ -257,11 +257,80 @@ results was with a cluster of four devpi instances processing 266 req/s, request
 Your mileage will vary!
 
 \subsubsection{Cost}
+Cost calcuations should only be taken with a grain of salt because the usecase provided didn't provide traffic metrics such as
+how many packages to be updated, how many servers will use devpi, the frequency of updates...etc. Below is two cost scenarios,
+one is super light, a few requests a day for a couple of server, the other is a sustained 100req/s. Each scenario is 
+expandable with autoscaling and ELB already included in pricing.
+
+Constants:
+\begin{itemize}
+    \item Each pip request reply is 500B (empirical average)
+    \item Each pip package download is 500Kb
+\end{itemize}
+
+\begin{table}[H]
+    \caption{Monthly cost at 2K requests per day, 10\% of requests result in package download}
+\begin{center}
+    \begin{tabular}{l c c c c}
+        Service     & Instances & Scalar  & Cost/Unit & Sum     \\
+        \hline
+        EC2         & 1         & 720hr   & \$0.02    & \$14.40 \\
+        ELB         & 1         & 720hr   & \$0.025   & \$18.00 \\
+        ELB Traffic & .03       & 1gb     & \$0.008   & \$0.00  \\
+        EBS         & 10        & 1gb/m   & \$0.10    & \$1.00  \\
+        Cloudwatch  & 1         & 1/m     & \$3.50    & \$3.50  \\
+        \hline
+                    &           &         & Total     & \$36.90
+    \end{tabular}
+\end{center}
+\end{table}
+
+\begin{table}[H]
+    \caption{Monthly cost at 100 requests per second, 0.1\% of requests result in package download}
+\begin{center}
+    \begin{tabular}{l c c c c}
+        Service     & Instances & Scalar  & Cost/Unit & Sum     \\
+        \hline
+        EC2         & 2         & 720hr   & \$0.02    & \$28.80 \\
+        ELB         & 1         & 720hr   & \$0.025   & \$18.00 \\
+        ELB Traffic & 1.5      & 1gb     & \$0.008   & \$0.24  \\
+        EBS         & 20        & 1gb/m   & \$0.10    & \$2.00  \\
+        Cloudwatch  & 2         & 1/m     & \$3.50    & \$7.00  \\
+        \hline
+                    &           &         & Total     & \$55.92
+    \end{tabular}
+\end{center}
+\end{table}
+
+
+\subsubsection{Scalability/Availability}
+Since the majority of the bottleneck is the devpi server itself, reducing traffic to devpi instances itself would benefit with less
+5XX errors, server crashing, and lower monthly cost since less instances would have to be ran. A caching proxy/reverse proxy in front
+of the instances would greatly benefit response time and offload much work from devpi service to the proxy cache.
+
+A reverse proxy called Varnish seems ideal for this setup. Varnish stored the cached items in RAM for improved performance. Because
+of this an EC2 instance larger than micro would be needed, more RAM the better. Varnish supports both HTTP and file caching meaning
+Varnish could respond to pip requests and serve pypi packages, if cached, itself without passing the request to devpi instance. If items
+aren't stored in the cache the request is proxied to a devpi instance, served, then cached for future requests. 
+
+An issue with caches is how does the cache keep in sync with the content it is caching? Varnish allows purging of cached objects via through
+Varnish commands or HTTP requests. The simplest purging setup is to have a cron job run every X hours to purge the entire cache. Requests coming 
+in will fill the cache up over time. Uncached items will have a single penalty with the request being passed to the devpi instance.
+
+A more complicated method is to have devpi notify varnish that a cached object needs to be purged, new pypi package became available. This
+will probably take modification of the devpi server so it can update its cache. This then becomes the issue of caching a cache, almost like cache 
+inception.
+
+In the past AWS has had issues with a region going down. To overcome this possible outage and provide redundancy utilizing AWS Route53
+service can help. Route53 has a DNS failover feature that can detect when a primary application is down, similar to the health checks used
+by ELB in determining instance states. Route53 will automatically remove a region and forward all traffic to a backup region. This does
+require to have a minimum of  at least two clusters, one in each region, that will increase monthly costs. These costs can be offset by 
+providing geographical optimizations if users are international, for this usecase both regions should be located in US.
 
 \subsubsection{Woes/Drawbacks}
-Care must be taken when deciding thresholds, with the current threshold there is no buffer for winding up or down instances. So
-at any given time the AutoScaling will be in constant flux. There does exist a five minute cool down for AutoScaling policy, but
-that helps but doesn't replace buffer thresholds. Next version will include these buffers.
+Care must be taken when deciding thresholds, with the current threshold there is a buffer for winding up or down instances. This
+is to reduce a flux of the AutoScaling group. These buffer threshold may need to be tweaked a little better than what they are
+currently set at.
 
 Another issue that was encountered was the ELB taking a while to register instances. On one rare occasion it is believed the AWS
 was taking a lunch break and decided not to add instances at all. Most of the time long registration times is to be blamed
@@ -270,7 +339,7 @@ the instance as unhealthy, and healthy checks must take place before ELB registr
 the worst possible time because the AutoScaling group is growing due to load. If the ELB takes too long to register the
 AutoScaling group will cool down and add another devpi instance before the first devpi instance has been registered. This is a FAIL.
 
-\subsubsection{Conclusion}
+\subsection{Conclusion}
 The best use case for this design is a deployment of servers that requires always available cache.
 
 

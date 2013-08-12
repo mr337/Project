@@ -145,13 +145,13 @@
         "HighLatency":{
             "Type": "AWS::CloudWatch::Alarm",
             "Properties": {
-                "AlarmDescription": "Scale-up if HTTP latency >= 5s in 1minute period",
+                "AlarmDescription": "Scale-up if HTTP latency >= 10s in 1minute period",
                 "MetricName": "Latency",
                 "Namespace": "AWS/ELB",
                 "Statistic": "Average",
                 "Period": "60",
                 "EvaluationPeriods": "1",
-                "Threshold": "5",
+                "Threshold": "10",
                 "AlarmActions": [ { "Ref": "DevpiScaleUpPolicy" } ],
                 "Dimensions": [
                 {
@@ -166,13 +166,13 @@
         "LowLatency": {
             "Type": "AWS::CloudWatch::Alarm",
             "Properties": {
-                "AlarmDescription": "Scale-down if HTTP latency < 5s in 10 minute period",
+                "AlarmDescription": "Scale-down if HTTP latency < 3s in 10 minute period",
                 "MetricName": "Latency",
                 "Namespace": "AWS/ELB",
                 "Statistic": "Average",
                 "Period": "60",
                 "EvaluationPeriods": "10",
-                "Threshold": "5",
+                "Threshold": "3",
                 "AlarmActions": [ { "Ref": "DevpiScaleDownPolicy" } ],
                 "Dimensions": [
                 {
