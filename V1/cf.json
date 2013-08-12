@@ -29,6 +29,13 @@
         }
     },
 
+    "Outputs" : {
+        "URL" : {
+            "Description" : "URL Of Devpi ELB",
+            "Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "DevpiLB", "DNSName" ]}]]}
+        }
+    },
+
     "Mappings" : {
         "AWSInstanceType2Arch" : {
             "t1.micro"    : { "Arch" : "64" }

@@ -30,6 +30,13 @@
         }
     },
 
+    "Outputs" : {
+        "URL" : {
+            "Description" : "URL Of Devpi Instance",
+            "Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "devpi", "PublicDnsName" ]}]]}
+        }
+    },
+
     "Mappings" : {
         "AWSInstanceType2Arch" : {
             "t1.micro"    : { "Arch" : "64" }
