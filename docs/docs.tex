@@ -25,9 +25,9 @@ There are multiple versions, all being a derivative of the base version.
 \section{Version - Base}
 The base version is enough to deploy a devpi cache in AWS via CloudFormation (CF).
 
-\section{Deployment}
+\subsection{Deployment}
 
-\subsection{Required Files}
+\subsubsection{Required Files}
 The necessary files for base deployment are located in the Project repo.
 
 Important files:
@@ -36,7 +36,7 @@ Important files:
     \item Project/base/puppet/devpi.pp - Puppet script used during instance provisioning
 \end{itemize}
 
-\subsection{Provisioning}
+\subsubsection{Provisioning}
 Ensure you have the required permissions to deploy instances, this also includes at least one set of EC2 KeyPair.
 
 The setup is done in two parts, one is to host the Puppet configuration accessible to the EC2 instances. We will use
@@ -60,11 +60,11 @@ CF steps:
     \item Once stack is created it will take at least 5 minutes for provisioning
 \end{enumerate}
 
-\subsection{Daily Operations}
+\subsubsection{Daily Operations}
 There should be no daily operations associated with this setup.
 
 
-\subsection{Architecture}
+\subsubsection{Architecture}
 For a simple devpi server all that is needed is devpi. Devpi has a built in server via Bottle so with a few
 commands devpi is installed and running. While the built in server is handy in my testing it seemed only to
 serve requests that originate from localhost. The more permanent deployment is to put nginx in front of the
@@ -77,10 +77,10 @@ devpi cache.
 \end{figure}
 
 
-\subsection{Implementation}
+\subsubsection{Implementation}
 To deploy a simple devpi server a CF script was written. The CF script
 is quite basic with starting a micro EC2 instance of Amazon Linux and applying the standard security policies of
-port 22 and 80 open. CF Cloud-Init is used to install puppet. UserData fields was used to do some prepatory work before
+port 22 and 80 open. CF Cloud-Init is used to install puppet. UserData fields was used to do some preparatory work before
 puppet could be used. In this case the UserData field was used to fetch the initial puppet script and apply it.
 
 \subsection{Puppet}
@@ -104,7 +104,7 @@ The use case:
 Using a puppet master (PM) requires at least a dedicated EC2, if not more, to be on the safe side. This could be ran on an instance
 that is also serving devpi. The only problem is when under load any extra processing seems to kill micro instance performance.
 More importantly, a PM now becomes a single point of failure. If the PM goes down the replacement instance won't become a new PM,
-without manual setup. Until the new PM can be installed and configured new instances can't recieve the puppet manifest and will fail
+without manual setup. Until the new PM can be installed and configured new instances can't receive the puppet manifest and will fail
 to be configured. 
 
 So to reduce that risk one could put a puppet master behind another ELB with dedicated instance, increasing cost, and also adding 
@@ -120,7 +120,7 @@ transferred to slave PM, and does it scale? A rabbit whole of issues to solve th
 \end{figure}
 \begin{enumerate}
     \item Puppet init stored on S3 bucked
-    \item Instanced fired up via CF using CF-init and userdata script
+    \item Instanced fired up via CF using CF-init and UserData script
     \item CF-init ensures puppet is installed
     \item Userdata script grabs the init .pp file and applies it
     \item Puppet applies the manifest and also creates a cron job to fetch and apply every X minutes (our case 30) 
@@ -132,8 +132,8 @@ This setup allows any AMI that is RHEL based, using yum, to use this process wit
 be extended very easily to any AMI that CF-init supports by switching the package manager.
 
 
-\section{Analysis}
-\subsection{Performance}
+\subsection{Analysis}
+\subsubsection{Performance}
 Stress testing was tested with siege. Siege simulates many GET requests, though this doesn't exactly align with devpi it is the only 
 metric I could easily simulate. Simulating high pip usage against devpi would have been out of the scope of this project. It
 would have required a single medium or larger EC2 instance for spawning pip instances and high bandwidth throughput, my ISP bandwidth
@@ -145,22 +145,22 @@ devpi fails to recover. With this it might be plausible that something internal,
 
 A larger EC2 instance could mitigate poor performance, but this particular performance issues stems from software not hardware.
 
-\subsection{Cost}
+\subsubsection{Cost}
 Cost calculation is simple for this setup. With a single instance running devpi falls in the AWS Free Usage Tier, S3 access every
 5 minutes totals to 8640 request \textless 20K requests included in the free tier. This setup does not incur cost month to month.
 
-\subsection{Woes/Drawbacks}
+\subsubsection{Woes/Drawbacks}
 As mentioned above one of the drawbacks is using only built in puppet modules, if you need additional modules your on your own. 
 Example of this is setting up the cron job. The tao of puppet is puppet defines the state the system should
 be in rather than using rules and executing shell commands. Researched turned up little on how to instruct puppet to install modules
 without a PM. To overcome this issue puppet modules is installed using shell scripts in the UserData section.
 
-To complicate matters, puppet installs modules in several places, /etc/puppet/modules:/usr/share/puppet/modules. When 
+To complicate matters, puppet installs modules in several places, /etc/puppet/modules: /usr/share/puppet/modules. When 
 /etc/puppet/modules wasn't found it would halt without trying other paths defined. As a quick fix in UserData the /usr/puppet/modules
 directory is created.
 
 Another issue is security, currently at the time of writing the manifest is on a public S3 bucket. For this usecase this isn't
-an issue since no sensitive information is containted within the manifest. For more sensitive manifests it is possible to define 
+an issue since no sensitive information is contained within the manifest. For more sensitive manifests it is possible to define 
 permissions in CF script so each EC2 instance can read the manifest.
 
 \subsection{Conclusion}
@@ -207,7 +207,7 @@ CF steps:
 \subsubsection{Daily Operations}
 There should be no daily operations associated with this setup.
 
-\subsection{Architecture}
+\subsubsection{Architecture}
 Taking the base version and extending for high traffic and availability it was obvious that some type of redundancy was needed. 
 Each instance is stand alone with no dependencies or shared resources, this makes it extremely easy to scale. AWS offers an 
 ELB for distributing traffic. AWS also offers AutoScaling groups to manage high and low traffic spikes.
@@ -221,7 +221,7 @@ server. The ELB will register instances that it determines is healthy, and start
     \includegraphics[width=0.75\textwidth]{figures/v1_arch.eps}
 \end{figure}
 
-\subsection{Implementation}
+\subsubsection{Implementation}
 This AutoScaling cluster is entirely written in CF script and follows the same provisioning setup as the base, except in a cluster.
 
 The ELB is setup together with AutoScaling. Alarms are set to monitor the ELB request latency and 5XX response codes.
@@ -250,7 +250,7 @@ results were with a cluster of four devpi instances processing 266 req/s, reques
 Your mileage will vary!
 
 \subsubsection{Cost}
-Cost calcuations should only be taken with a grain of salt, because the usecase didn't provide traffic metrics such as
+Cost calculations should only be taken with a grain of salt, because the usecase didn't provide traffic metrics such as
 how many packages to be updated, how many servers will use devpi, the frequency of updates...etc. Below are two cost scenarios,
 one is super light, a few requests a day for a couple of servers, the other is a sustained 100req/s. Each scenario is 
 expandable with autoscaling and ELB already included in pricing.
